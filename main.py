@@ -8,18 +8,19 @@ from datetime import datetime
 from PySide6.QtCore import QSize, Qt, QTimer, QUrl
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (QApplication, QButtonGroup, QFileDialog, QFrame, QGridLayout, QHBoxLayout, QLabel,
-                               QMainWindow, QMessageBox, QPlainTextEdit, QPushButton, QStackedWidget, QTabWidget,
-                               QVBoxLayout, QWidget)
+                               QMainWindow, QMessageBox, QPlainTextEdit, QPushButton, QScrollArea, QStackedWidget,
+                               QTabWidget, QVBoxLayout, QWidget)
 
 import admin
 import disks
 import drivers
+import recommend
 import scanners as sc
 import tuning
 import updater
 from version import __version__
-from ui import (ACCENT, DOT, INK2, STYLE, MetricCard, Page, SegBar, Worker, fill, fit_height, glyph_icon, make_table,
-                marker_legend, tool_button)
+from ui import (ACCENT, DOT, INK2, STYLE, MetricCard, Page, SegBar, Worker, app_icon, fill, fit_height, glyph_icon,
+                make_table, marker_legend, tool_button)
 
 gb = sc.gb
 
@@ -53,26 +54,87 @@ def box(title=None):
 class OverviewPage(Page):
     def __init__(self, win):
         super().__init__("Przegląd", "Stan komputera i podsumowanie skanów", sc.scan_overview, button="Skanuj wszystko")
-        self.win = win
+        self.win, self.actions = win, None
 
     def run(self):
         super().run()
+        self.actions = None; self.draw_actions()
+        self._rw = Worker(lambda: recommend.build_actions(recommend.measure()))
+        self._rw.done.connect(self.on_actions); self._rw.start()
         for _, p in self.win.pages[1:]:
             if p is not self and not isinstance(p, (DisksPage, AdminPage)):
                 p.run()
 
     def build(self):
+        area = QScrollArea(); area.setWidgetResizable(True); area.setFrameShape(QFrame.NoFrame)
+        area.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        area.setStyleSheet("QScrollArea { background: #fafafa; border: none; }")
+        inner = QWidget(); inner.setObjectName("content"); il = QVBoxLayout(inner)
+        il.setContentsMargins(0, 0, 12, 0); il.setSpacing(12); area.setWidget(inner); self.body.addWidget(area, 1)
         row = QHBoxLayout(); row.setSpacing(12)
         self.c_ram, self.c_disk = MetricCard("RAM"), MetricCard("Dysk systemowy")
         self.c_auto, self.c_junk = MetricCard("Autostart", False), MetricCard("Do odzyskania", False)
         for c in (self.c_ram, self.c_disk, self.c_auto, self.c_junk):
             row.addWidget(c, 1)
-        self.body.addLayout(row)
+        il.addLayout(row)
         f, fl = box("Zajętość dysku systemowego")
-        self.seg = SegBar(); fl.addWidget(self.seg); self.body.addWidget(f)
+        self.seg = SegBar(); fl.addWidget(self.seg); il.addWidget(f)
+        self.abox, al = box(); head = QHBoxLayout()
+        t = QLabel("Zalecane akcje dla dysku C:"); t.setStyleSheet("font-weight:500")
+        self.a_total = QLabel(""); self.a_total.setStyleSheet(f"font-family:Consolas;color:{INK2}")
+        head.addWidget(t, 1); head.addWidget(self.a_total); al.addLayout(head)
+        self.a_sub = QLabel(""); self.a_sub.setObjectName("muted"); self.a_sub.setWordWrap(True); al.addWidget(self.a_sub)
+        self.a_rows = QVBoxLayout(); self.a_rows.setSpacing(0); al.addLayout(self.a_rows)
+        al.addWidget(marker_legend()); il.addWidget(self.abox)
         self.fbox, self.find = box(); self.find.setSpacing(0); self.find.setContentsMargins(16, 4, 16, 4)
-        self.body.addWidget(self.fbox)
-        self.tbl = make_table(["Proces", "RAM"], num_cols=(1,)); self.body.addWidget(self.tbl, 1)
+        il.addWidget(self.fbox)
+        self.tbl = make_table(["Proces", "RAM"], num_cols=(1,)); il.addWidget(self.tbl)
+        il.addStretch(1)
+
+    def on_actions(self, res):
+        self.actions = res; self.draw_actions()
+
+    def draw_actions(self):
+        if not self.built:
+            return
+        clear_layout(self.a_rows)
+        a = self.actions
+        if a is None or (isinstance(a, dict) and "__error__" in a):
+            self.a_total.setText(""); self.a_sub.setText("")
+            msg = "Liczę, ile miejsca można odzyskać…" if a is None else "Nie udało się obliczyć zaleceń: " + a["__error__"]
+            lbl = QLabel(msg); lbl.setObjectName("muted"); self.a_rows.addWidget(lbl); return
+        total = sum(r["gain"] or 0 for r in a)
+        s = getattr(self, "sys_disk", None)
+        self.a_total.setText(f"do odzyskania ok. {gb(total)}")
+        if s:
+            self.a_sub.setText(f"Wolne teraz {gb(s['free'])} z {gb(s['total'])}. Po pierwszych akcjach ok. {gb(s['free'] + total)}. "
+                               "Rozmiary są szacunkiem, niektóre foldery systemowe są widoczne w pełni dopiero po uprawnieniach administratora")
+        for r in a:
+            w = QWidget(); h = QHBoxLayout(w); h.setContentsMargins(0, 10, 0, 10); h.setSpacing(12)
+            color, filled, _ = DOT[r["level"]]
+            d = QLabel("●" if filled else "○"); d.setStyleSheet(f"color:{color};font-size:16px"); d.setFixedWidth(16)
+            v = QVBoxLayout(); v.setSpacing(0)
+            sub = QLabel(r["sub"]); sub.setObjectName("muted"); sub.setWordWrap(True)
+            v.addWidget(QLabel(r["title"])); v.addWidget(sub)
+            g = QLabel(gb(r["gain"]) if r["gain"] else "—"); g.setFixedWidth(88); g.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+            g.setStyleSheet(f"font-family:Consolas;color:{INK2}")
+            b = tool_button("Uruchom" if r["changes"] else "Otwórz", r["changes"]); b.setFixedWidth(120)
+            b.clicked.connect(lambda _, k=r["key"]: self.act(k))
+            h.addWidget(d); h.addLayout(v, 1); h.addWidget(g); h.addWidget(b)
+            self.a_rows.addWidget(w)
+
+    def act(self, key):
+        w = self.win
+        if key == "hiber":
+            hiber_off(w)
+        elif key == "dism":
+            run_dism(w)
+        elif key == "analyze":
+            w.goto(DisksPage, run=True)
+        else:
+            launch({"cleanmgr": ["cleanmgr", "/dC"], "bin": ["explorer", "shell:RecycleBinFolder"],
+                    "apps": "ms-settings:appsfeatures", "storage": "ms-settings:storagesense",
+                    "downloads": ["explorer", os.path.join(os.environ.get("USERPROFILE", ""), "Downloads")]}[key])
 
     def render(self, d):
         self.c_ram.set(f"{d['ram_percent']:.0f}%", f"wolne {gb(d['ram_free'])} z {gb(d['ram_total'])}", d["ram_percent"])
@@ -81,6 +143,8 @@ class OverviewPage(Page):
         self.sys_disk = s
         self.set_segments(None)
         fill(self.tbl, [(n, gb(b)) for n, b in d["top_ram"]], (360, 0))
+        fit_height(self.tbl)
+        self.draw_actions()
         self.win.refresh_findings()
         return "Przegląd gotowy"
 
@@ -251,6 +315,12 @@ HIBER_OFF = ("powercfg /h off; Write-Host 'Hibernacja i szybki start wyłączone
              "Start-Sleep 6")
 
 
+def hiber_off(parent):
+    confirm_elevated(parent, "Wyłączenie hibernacji",
+                     "Wykona polecenie: powercfg /h off\nUsuwa plik hiberfil.sys (zwalnia miejsce na C:) i wyłącza szybki start. "
+                     "Na laptopie tracisz hibernację. Cofniesz poleceniem: powercfg /h on", HIBER_OFF)
+
+
 class OptimizePage(Page):
     LABEL = {"ok": "OK", "warn": "Do poprawy", "bad": "Uwaga", "info": "Opcjonalnie"}
 
@@ -263,10 +333,7 @@ class OptimizePage(Page):
         f, bl = box("Działania")
         acts = [
             ("Uruchom ponownie", True, lambda: confirm_restart(self)),
-            ("Wyłącz hibernację", True, lambda: confirm_elevated(
-                self, "Wyłączenie hibernacji",
-                "Wykona polecenie: powercfg /h off\nUsuwa plik hiberfil.sys (zwolni ok. 12 GB na C:) i wyłącza szybki start. "
-                "Na laptopie tracisz hibernację. Cofniesz poleceniem: powercfg /h on", HIBER_OFF)),
+            ("Wyłącz hibernację", True, lambda: hiber_off(self)),
             ("Plik wymiany i efekty wizualne", False, lambda: launch(["SystemPropertiesPerformance.exe"])),
             ("Autostart", False, lambda: launch("ms-settings:startupapps")),
             ("Plan zasilania", False, lambda: launch(["control", "powercfg.cpl"])),
@@ -277,7 +344,7 @@ class OptimizePage(Page):
             b = tool_button(name, ch); b.clicked.connect(lambda _, f=fn: f()); grid.addWidget(b, i // 3, i % 3)
         bl.addLayout(grid)
         h = QLabel("Plik wymiany: w oknie Opcje wydajności wybierz Zaawansowane → Pamięć wirtualna → Zmień. "
-                   "Ustaw rozmiar niestandardowy na C: (np. 4096–8192 MB) i usuń plik z E:."); h.setObjectName("muted"); h.setWordWrap(True)
+                   "Ustaw rozmiar niestandardowy na C: (przy 32 GB RAM wystarczy 2048–4096 MB) i usuń plik z E:."); h.setObjectName("muted"); h.setWordWrap(True)
         bl.addWidget(h); bl.addWidget(marker_legend())
         self.body.addWidget(f); self.body.addStretch(1)
 
@@ -492,9 +559,10 @@ class Main(QMainWindow):
         side = QFrame(); side.setObjectName("side"); side.setFixedWidth(240)
         sl = QVBoxLayout(side); sl.setContentsMargins(12, 16, 12, 12); sl.setSpacing(4)
         br = QLabel("PC Optimizer"); br.setObjectName("brand"); sl.addWidget(br)
-        self.stack = QStackedWidget(); grp = QButtonGroup(self)
+        self.stack = QStackedWidget(); grp = QButtonGroup(self); self.navs = []
         for i, ((name, page), ic) in enumerate(zip(self.pages, icons)):
             b = QPushButton(name); b.setObjectName("nav"); b.setCheckable(True); b.setIcon(glyph_icon(ic)); b.setIconSize(QSize(16, 16))
+            self.navs.append(b)
             b.clicked.connect(lambda _, i=i: self.stack.setCurrentIndex(i)); grp.addButton(b); sl.addWidget(b)
             self.stack.addWidget(page); page.scanned.connect(self.refresh_findings)
             if i == 0:
@@ -511,6 +579,12 @@ class Main(QMainWindow):
 
     def page(self, cls):
         return next(p for _, p in self.pages if isinstance(p, cls))
+
+    def goto(self, cls, run=False):
+        i = next(i for i, (_, p) in enumerate(self.pages) if isinstance(p, cls))
+        self.stack.setCurrentIndex(i); self.navs[i].setChecked(True)
+        if run and self.pages[i][1].data is None:
+            self.pages[i][1].run()
 
     # Aktualizacje: sprawdzenie w tle po starcie; instalacja dopiero po potwierdzeniu
     def check_update(self):
@@ -559,7 +633,12 @@ class Main(QMainWindow):
 
 
 if __name__ == "__main__":
+    try:  # własny identyfikator, żeby pasek zadań pokazywał ikonę aplikacji, a nie Pythona
+        import ctypes
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("PCOptimizer.App")
+    except (AttributeError, OSError):
+        pass
     app = QApplication(sys.argv)
-    app.setStyle("Fusion"); app.setStyleSheet(STYLE)
+    app.setStyle("Fusion"); app.setStyleSheet(STYLE); app.setWindowIcon(app_icon())
     w = Main(); w.show()
     sys.exit(app.exec())

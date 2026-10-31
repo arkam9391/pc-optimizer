@@ -72,6 +72,29 @@ def glyph_icon(ch, color=INK3, px=30):
     return QIcon(pm)
 
 
+def logo_pixmap(px):
+    """Znak aplikacji: grafitowy kwadrat z paskiem zajętości dysku (kobalt = największy folder, szary = reszta, jasny = wolne)."""
+    pm = QPixmap(px, px); pm.fill(Qt.transparent)
+    p = QPainter(pm); p.setRenderHint(QPainter.Antialiasing); p.setPen(Qt.NoPen)
+    p.setBrush(QColor(INK)); p.drawRoundedRect(QRectF(0, 0, px, px), px * 0.22, px * 0.22)
+    pad, gap = px * 0.16, px * 0.045
+    bar_h = px * 0.34; y = (px - bar_h) / 2; w = px - 2 * pad - 2 * gap
+    x = pad
+    for frac, color in ((0.50, ACCENT), (0.22, "#8a8a93"), (0.28, "#ececee")):
+        sw = w * frac
+        p.setBrush(QColor(color)); p.drawRoundedRect(QRectF(x, y, sw, bar_h), px * 0.07, px * 0.07)
+        x += sw + gap
+    p.end()
+    return pm
+
+
+def app_icon():
+    ic = QIcon()
+    for s in (16, 24, 32, 48, 64, 128, 256):
+        ic.addPixmap(logo_pixmap(s))
+    return ic
+
+
 def mono(px=12):
     f = QFont(MONO); f.setPixelSize(px); return f
 

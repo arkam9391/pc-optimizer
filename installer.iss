@@ -19,6 +19,7 @@ OutputBaseFilename=PCOptimizer-Setup-{#AppVersion}
 Compression=lzma2
 SolidCompression=yes
 WizardStyle=modern
+SetupIconFile=icon.ico
 UninstallDisplayIcon={app}\PCOptimizer.exe
 CloseApplications=yes
 RestartApplications=yes

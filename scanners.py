@@ -215,7 +215,8 @@ def scan_programs():
                     seen.add((name, g("DisplayVersion")))
                     kb = g("EstimatedSize") or 0
                     progs.append({"name": name, "version": g("DisplayVersion") or "", "publisher": g("Publisher") or "",
-                                  "date": g("InstallDate") or "", "size": int(kb) * 1024 if isinstance(kb, int) else 0})
+                                  "date": g("InstallDate") or "", "size": int(kb) * 1024 if isinstance(kb, int) else 0,
+                                  "location": g("InstallLocation") or ""})
             except OSError:
                 continue
     progs.sort(key=lambda x: -x["size"])

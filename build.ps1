@@ -9,7 +9,9 @@ $work = Join-Path $env:TEMP "pcopt-build"
 if (Test-Path $work) { Remove-Item $work -Recurse -Force }
 New-Item -ItemType Directory $work | Out-Null
 
-python -m PyInstaller --noconfirm --clean --windowed --name PCOptimizer `
+python make_icon.py
+if ($LASTEXITCODE) { throw "Generowanie ikony nie powiodlo sie" }
+python -m PyInstaller --noconfirm --clean --windowed --name PCOptimizer --icon "$PSScriptRoot\icon.ico" `
     --distpath "$work\dist" --workpath "$work\build" --specpath "$work" main.py
 if ($LASTEXITCODE) { throw "PyInstaller nie powiodl sie" }
 

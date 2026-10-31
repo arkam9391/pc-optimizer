@@ -38,7 +38,7 @@ def scan_tuning():
         letter = p["Name"][0].upper()
         slow = media.get(letter) == "HDD"
         rows.append(("warn" if slow else "ok", "Plik wymiany", f"{p['Name']} · {p['AllocatedBaseSize']} MB ({media.get(letter, '?')})",
-                     "Przenieś na SSD (C:), np. 4096–8192 MB" if slow else "Bez uwag"))
+                     "Przenieś na SSD (C:), przy 32 GB RAM wystarczy 2048–4096 MB, żeby oszczędzić miejsce" if slow else "Bez uwag"))
     vfx = _reg(winreg.HKEY_CURRENT_USER, r"Software\Microsoft\Windows\CurrentVersion\Explorer\VisualEffects", "VisualFXSetting")
     vfx = 0 if vfx is None else vfx
     names = {0: "wybór Windows (domyślne)", 1: "najlepszy wygląd", 2: "najlepsza wydajność", 3: "ustawienia niestandardowe"}
