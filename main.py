@@ -3,11 +3,12 @@ import json
 import os
 import subprocess
 import sys
+import tempfile
 from datetime import datetime
 
-from PySide6.QtCore import QSize, Qt, QTimer, QUrl
-from PySide6.QtGui import QDesktopServices
-from PySide6.QtWidgets import (QApplication, QButtonGroup, QFileDialog, QFrame, QGridLayout, QHBoxLayout, QLabel,
+from PySide6.QtCore import QPointF, QSize, Qt, QTimer, QUrl
+from PySide6.QtGui import QColor, QDesktopServices, QPainter, QPen, QPixmap
+from PySide6.QtWidgets import (QApplication, QButtonGroup, QComboBox, QFileDialog, QFrame, QGridLayout, QHBoxLayout, QLabel,
                                QMainWindow, QMessageBox, QPlainTextEdit, QPushButton, QScrollArea, QStackedWidget,
                                QTabWidget, QVBoxLayout, QWidget)
 
@@ -19,8 +20,9 @@ import scanners as sc
 import tuning
 import updater
 from version import __version__
-from ui import (ACCENT, DOT, INK2, STYLE, MetricCard, Page, SegBar, Worker, app_icon, fill, fit_height, glyph_icon,
-                make_table, marker_legend, tool_button)
+from ui import (ACCENT, DOT, ICON, ICON_DIM, INK2, INK3, PAGE, SEG_COLORS, SEG_FREE, SEG_REST, SEG_USED, STYLE, THEME, THEMES,
+                MetricCard, Page, SegBar, Worker, app_icon, fill, fit_height, glyph_icon, make_palette, make_table, marker_legend,
+                save_theme, tool_button)
 
 gb = sc.gb
 
@@ -68,7 +70,7 @@ class OverviewPage(Page):
     def build(self):
         area = QScrollArea(); area.setWidgetResizable(True); area.setFrameShape(QFrame.NoFrame)
         area.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        area.setStyleSheet("QScrollArea { background: #fafafa; border: none; }")
+        area.setStyleSheet(f"QScrollArea {{ background: {PAGE}; border: none; }}")
         inner = QWidget(); inner.setObjectName("content"); il = QVBoxLayout(inner)
         il.setContentsMargins(0, 0, 12, 0); il.setSpacing(12); area.setWidget(inner); self.body.addWidget(area, 1)
         row = QHBoxLayout(); row.setSpacing(12)
@@ -155,13 +157,13 @@ class OverviewPage(Page):
             return
         segs, rest = [], s["total"] - s["free"]
         if folders:
-            cols = [ACCENT, "#52525b", "#71717a", "#a1a1aa"]
+            cols = SEG_COLORS
             for (name, size), c in zip(folders[:4], cols):
                 segs.append((name, size, c)); rest -= size
-            segs.append(("Inne", max(rest, 0), "#d4d4d8"))
+            segs.append(("Inne", max(rest, 0), SEG_REST))
         else:
-            segs.append(("Zajęte", rest, "#52525b"))
-        segs.append(("Wolne", s["free"], "#ececee"))
+            segs.append(("Zajęte", rest, SEG_USED))
+        segs.append(("Wolne", s["free"], SEG_FREE))
         self.seg.set(segs)
 
     def refresh(self, findings, autostart_n, junk):
@@ -451,7 +453,7 @@ class DisksPage(Page):
         self.sel, self.hist = d, []
         self.cap.setText(f"Dysk {d['letter']}:  {d['model']} ({d['media']}) · stan: {d['health']} · {d['percent']:.0f}% zajęte")
         used = d["total"] - d["free"]
-        self.seg.set([("Zajęte", used, "#52525b"), ("Wolne", d["free"], "#ececee")])
+        self.seg.set([("Zajęte", used, SEG_USED), ("Wolne", d["free"], SEG_FREE)])
         if d["media"] == "HDD":
             self.hint.setText("Dysk HDD: pomaga defragmentacja (Optymalizuj dyski) i Oczyszczanie dysku")
         else:
@@ -470,7 +472,7 @@ class DisksPage(Page):
         self.crumb.setText(f"{r['path']}  ·  razem {gb(r['total'])}")
         top = max((i["size"] for i in r["items"]), default=1) or 1
         self.items = r["items"]
-        d_icon, f_icon = glyph_icon("", "#737373", 28), glyph_icon("", "#a1a1aa", 28)
+        d_icon, f_icon = glyph_icon("", ICON, 28), glyph_icon("", ICON_DIM, 28)
         fill(self.tbl, [(i["name"], gb(i["size"]), ("", None, i["size"] / top)) for i in r["items"]], (440, 110, 0),
              icons={n: (d_icon if i["is_dir"] else f_icon) for n, i in enumerate(r["items"])})
         fill(self.big, [(p, gb(s)) for p, s in r["big"]], (680, 0))
@@ -478,8 +480,8 @@ class DisksPage(Page):
         if self.sel and r["path"] == self.sel["mount"]:  # pasek zajętości dzieli dysk na największe foldery
             folders = [(i["name"], i["size"]) for i in r["items"] if i["is_dir"]][:4]
             used = self.sel["total"] - self.sel["free"]; rest = used - sum(s for _, s in folders)
-            cols = ["#2b59c3", "#52525b", "#71717a", "#a1a1aa"]
-            segs = [(n, s, c) for (n, s), c in zip(folders, cols)] + [("Inne", max(rest, 0), "#d4d4d8"), ("Wolne", self.sel["free"], "#ececee")]
+            cols = SEG_COLORS
+            segs = [(n, s, c) for (n, s), c in zip(folders, cols)] + [("Inne", max(rest, 0), SEG_REST), ("Wolne", self.sel["free"], SEG_FREE)]
             self.seg.set(segs)
             if self.win and self.sel["letter"] == "C":
                 self.win.over.set_segments(folders)
@@ -570,6 +572,13 @@ class Main(QMainWindow):
         sl.addStretch(1)
         self.upd_btn = QPushButton(); self.upd_btn.setObjectName("nav"); self.upd_btn.hide()
         self.upd_btn.clicked.connect(self.install_update); sl.addWidget(self.upd_btn)
+        cap = QLabel("Motyw"); cap.setObjectName("muted"); cap.setContentsMargins(12, 0, 0, 0); sl.addWidget(cap)
+        self.theme_box = QComboBox()
+        for key, t in THEMES.items():
+            self.theme_box.addItem(t["label"], key)
+        self.theme_box.setCurrentIndex(list(THEMES).index(THEME))
+        self.theme_box.setStyleSheet(f"QComboBox::down-arrow {{ image: url({self.chevron()}); width: 12px; height: 12px; }}")
+        self.theme_box.activated.connect(self.change_theme); sl.addWidget(self.theme_box)
         mode = QLabel(f"○  Skany tylko odczytują dane\n    Wersja {__version__}"); mode.setObjectName("muted")
         mode.setContentsMargins(12, 0, 0, 0); sl.addWidget(mode)
         self.update_info = None
@@ -579,6 +588,29 @@ class Main(QMainWindow):
 
     def page(self, cls):
         return next(p for _, p in self.pages if isinstance(p, cls))
+
+    @staticmethod
+    def chevron():
+        """Strzałka listy motywów w kolorze motywu; arkusz stylów potrzebuje pliku obrazu."""
+        path = os.path.join(tempfile.gettempdir(), f"pcopt_chevron_{THEME}.png")
+        pm = QPixmap(24, 24); pm.fill(Qt.transparent)
+        p = QPainter(pm); p.setRenderHint(QPainter.Antialiasing); p.setPen(QPen(QColor(INK3), 2.4, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin))
+        p.drawPolyline([QPointF(6, 9), QPointF(12, 15), QPointF(18, 9)]); p.end()
+        pm.save(path)
+        return path.replace("\\", "/")
+
+    def change_theme(self, i):
+        key = self.theme_box.itemData(i)
+        if key == THEME:
+            return
+        if QMessageBox.question(self, "Motyw", "Motyw zmieni się po ponownym uruchomieniu programu. Wyniki skanów zostaną wyczyszczone.\n\n"
+                                "Uruchomić ponownie teraz?") != QMessageBox.Yes:
+            self.theme_box.setCurrentIndex(list(THEMES).index(THEME)); return
+        save_theme(key)
+        cmd = [sys.executable] if getattr(sys, "frozen", False) else [sys.executable, os.path.abspath(sys.argv[0])]
+        env = {k: v for k, v in os.environ.items() if k != "PCOPT_THEME"}
+        subprocess.Popen(cmd, env=env)
+        QApplication.quit()
 
     def goto(self, cls, run=False):
         i = next(i for i, (_, p) in enumerate(self.pages) if isinstance(p, cls))
@@ -639,6 +671,6 @@ if __name__ == "__main__":
     except (AttributeError, OSError):
         pass
     app = QApplication(sys.argv)
-    app.setStyle("Fusion"); app.setStyleSheet(STYLE); app.setWindowIcon(app_icon())
+    app.setStyle("Fusion"); app.setPalette(make_palette()); app.setStyleSheet(STYLE); app.setWindowIcon(app_icon())
     w = Main(); w.show()
     sys.exit(app.exec())

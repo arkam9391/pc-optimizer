@@ -10,6 +10,9 @@ Pobierz `PCOptimizer-Setup-<wersja>.exe` z zakładki Releases i wybierz folder w
 
 Po starcie program sprawdza w tle najnowsze wydanie w tym repozytorium. Gdy jest nowsze, w panelu bocznym pojawia się przycisk z numerem wersji. Instalacja rusza dopiero po potwierdzeniu, a instalator jest sprawdzany sumą SHA-256 z pliku `.sha256` dołączonego do wydania.
 
+## Motywy
+
+Wyglądem steruje lista „Motyw” w panelu bocznym: Jasny, Grafit, Północ i Węgiel. Zmiana wymaga ponownego uruchomienia programu i czyści wyniki skanów. Motyw można też wymusić przy starcie: `PCOptimizer.exe --theme grafit` (`jasny`, `grafit`, `polnoc`, `wegiel`) albo zmienną `PCOPT_THEME`. Wybór zapisuje się w `%APPDATA%\PCOptimizer\settings.json`.
 ## Uruchomienie ze źródeł
 
 ```

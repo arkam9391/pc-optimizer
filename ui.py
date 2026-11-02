@@ -7,61 +7,11 @@ from PySide6.QtWidgets import (QAbstractItemView, QApplication, QFrame, QHBoxLay
                                QPushButton, QSizePolicy, QStyle, QStyledItemDelegate, QStyleOptionViewItem,
                                QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget)
 
-# --- tokeny ---------------------------------------------------------------
-INK, INK2, INK3 = "#171717", "#525252", "#737373"
-LINE, PAGE, CARD, SIDE, RAISED = "#e6e6e8", "#fafafa", "#ffffff", "#f4f4f5", "#ececee"
-ACCENT = "#2b59c3"
-MONO = "Consolas"
-DOT = {  # klucz: (kolor kropki, wypełniona?, kolor tekstu)
-    "warn": ("#d97706", True, INK), "bad": ("#dc2626", True, INK), "ok": ("#16a34a", True, INK2),
-    "info": ("#a1a1aa", False, INK2), "gray": ("#a1a1aa", False, INK3),
-}
-ROLE_KEY, ROLE_BAR = Qt.UserRole + 1, Qt.UserRole + 2
+# --- tokeny: wartości pochodzą z aktywnego motywu (theme.py) ---------------
+from theme import (ACCENT, CARD, DOT, ICON, ICON_DIM, INK, INK2, INK3, LINE, MONO, PAGE, RAISED, SEG_COLORS, SEG_FREE,  # noqa: E402
+                   SEG_REST, SEG_USED, SIDE, STYLE, T, THEME, THEMES, make_palette, save_theme)
 
-STYLE = f"""
-* {{ font-family: "Segoe UI"; font-size: 13px; color: {INK}; }}
-QMainWindow, #root, #content {{ background: {PAGE}; }}
-#side {{ background: {SIDE}; border-right: 1px solid {LINE}; }}
-#brand {{ font-size: 16px; font-weight: 500; padding: 4px 12px 16px 12px; }}
-QPushButton#nav {{ text-align: left; padding: 8px 12px; border: none; border-radius: 8px; background: transparent; color: {INK2}; }}
-QPushButton#nav:hover {{ background: {RAISED}; }}
-QPushButton#nav:checked {{ background: #e4e4e7; color: {INK}; font-weight: 500; }}
-QPushButton {{ padding: 8px 16px; border: 1px solid #d9d9dc; border-radius: 8px; background: {CARD}; }}
-QPushButton:hover {{ background: {SIDE}; }}
-QPushButton:pressed {{ background: {RAISED}; }}
-QPushButton:disabled {{ color: #a1a1aa; background: {PAGE}; }}
-QPushButton#primary {{ background: {INK}; color: #ffffff; border: none; }}
-QPushButton#primary:hover {{ background: #333333; }}
-QPushButton#primary:disabled {{ background: #a1a1aa; color: #ffffff; }}
-QPushButton#chip {{ padding: 4px 12px; color: {INK2}; }}
-QPushButton#chip:checked {{ background: #e4e4e7; color: {INK}; border-color: #c9c9ce; }}
-QPushButton#tool {{ text-align: left; padding: 8px 12px; border: none; background: transparent; }}
-QPushButton#tool:hover {{ background: {RAISED}; }}
-QLabel#h {{ font-size: 24px; font-weight: 500; }}
-QLabel#sub {{ color: {INK2}; }}
-QLabel#muted {{ color: {INK3}; font-size: 12px; }}
-QLabel#status {{ color: {INK3}; font-size: 12px; }}
-QLabel#cap {{ color: {INK2}; font-size: 12px; }}
-#card, #box {{ background: {CARD}; border: 1px solid {LINE}; border-radius: 12px; }}
-QLabel#metric {{ font-family: {MONO}; font-size: 26px; }}
-QProgressBar {{ background: {LINE}; border: none; border-radius: 2px; max-height: 4px; min-height: 4px; }}
-QProgressBar::chunk {{ background: #52525b; border-radius: 2px; }}
-QProgressBar#busy {{ max-height: 2px; min-height: 2px; }}
-QProgressBar#busy::chunk {{ background: {ACCENT}; }}
-QTableWidget {{ border: 1px solid {LINE}; border-radius: 12px; gridline-color: transparent; background: {CARD};
-  selection-background-color: {SIDE}; selection-color: {INK}; outline: 0; }}
-QTableWidget::item {{ padding: 4px 8px; border-bottom: 1px solid #f0f0f1; }}
-QHeaderView::section {{ background: {CARD}; border: none; border-bottom: 1px solid {LINE}; padding: 8px; color: {INK3}; font-size: 12px; }}
-QTabWidget::pane {{ border: none; }}
-QTabBar::tab {{ padding: 8px 12px; margin-right: 4px; border-radius: 8px; background: transparent; color: {INK2}; }}
-QTabBar::tab:selected {{ background: #e4e4e7; color: {INK}; }}
-QPlainTextEdit {{ background: {CARD}; border: 1px solid {LINE}; border-radius: 12px; padding: 8px; }}
-QScrollBar:vertical {{ width: 8px; background: transparent; margin: 4px 0; }}
-QScrollBar::handle:vertical {{ background: #d4d4d8; border-radius: 4px; min-height: 32px; }}
-QScrollBar::add-line, QScrollBar::sub-line {{ height: 0; }}
-QScrollBar:horizontal {{ height: 8px; background: transparent; }}
-QScrollBar::handle:horizontal {{ background: #d4d4d8; border-radius: 4px; min-width: 32px; }}
-"""
+ROLE_KEY, ROLE_BAR = Qt.UserRole + 1, Qt.UserRole + 2
 
 
 def glyph_icon(ch, color=INK3, px=30):
@@ -76,11 +26,11 @@ def logo_pixmap(px):
     """Znak aplikacji: grafitowy kwadrat z paskiem zajętości dysku (kobalt = największy folder, szary = reszta, jasny = wolne)."""
     pm = QPixmap(px, px); pm.fill(Qt.transparent)
     p = QPainter(pm); p.setRenderHint(QPainter.Antialiasing); p.setPen(Qt.NoPen)
-    p.setBrush(QColor(INK)); p.drawRoundedRect(QRectF(0, 0, px, px), px * 0.22, px * 0.22)
+    p.setBrush(QColor("#171717")); p.drawRoundedRect(QRectF(0, 0, px, px), px * 0.22, px * 0.22)
     pad, gap = px * 0.16, px * 0.045
     bar_h = px * 0.34; y = (px - bar_h) / 2; w = px - 2 * pad - 2 * gap
     x = pad
-    for frac, color in ((0.50, ACCENT), (0.22, "#8a8a93"), (0.28, "#ececee")):
+    for frac, color in ((0.50, "#2b59c3"), (0.22, "#8a8a93"), (0.28, "#ececee")):
         sw = w * frac
         p.setBrush(QColor(color)); p.drawRoundedRect(QRectF(x, y, sw, bar_h), px * 0.07, px * 0.07)
         x += sw + gap
@@ -135,7 +85,7 @@ class BarDelegate(QStyledItemDelegate):
         r = QRectF(opt.rect.left() + 8, opt.rect.center().y() - 2, opt.rect.width() - 16, 4)
         p.save(); p.setRenderHint(QPainter.Antialiasing); p.setPen(Qt.NoPen)
         p.setBrush(QColor(LINE)); p.drawRoundedRect(r, 2, 2)
-        p.setBrush(QColor(ACCENT if frac >= 0.999 else "#a1a1aa"))
+        p.setBrush(QColor(ACCENT if frac >= 0.999 else T["BAR_LOW"]))
         p.drawRoundedRect(QRectF(r.left(), r.top(), max(3.0, r.width() * frac), 4), 2, 2)
         p.restore()
 
@@ -217,13 +167,13 @@ class MetricCard(QFrame):
         self.value.setText(value); self.note.setText(note)
         if pct is not None:
             self.bar.setValue(int(pct))
-            col = "#d97706" if pct >= 85 else "#52525b"
+            col = T["WARN"] if pct >= 85 else T["BAR"]
             self.bar.setStyleSheet(f"QProgressBar::chunk {{ background: {col}; border-radius: 2px; }}")
 
 
 class SegBar(QWidget):
     """Pasek zajętości dysku podzielony na foldery i wolne miejsce. Jedyny mocno kolorowy element ekranu."""
-    COLORS = [ACCENT, "#52525b", "#71717a", "#a1a1aa"]
+    COLORS = SEG_COLORS
 
     def __init__(self):
         super().__init__(); self.segs = []; self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
